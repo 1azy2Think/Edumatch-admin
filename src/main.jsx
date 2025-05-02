@@ -10,7 +10,7 @@ import { BrowserRouter } from 'react-router-dom';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <Suspense>
-    <BrowserRouter basename='/EduMatch-admin'>
+    <BrowserRouter basename='/Edumatch-admin'>
       <App />
     </BrowserRouter>
   </Suspense>,
