@@ -43,5 +43,5 @@ export default defineConfig({
     // })],
 
     plugins: [svgr(), react()],
-    base: '/EduMatch-admin'
+    base: '/Edumatch-admin'
 });
