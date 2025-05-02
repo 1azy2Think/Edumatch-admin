@@ -1,0 +1,1 @@
+import{j as a}from"./index-c2563e0d.js";import{a as p}from"./Stack-e027e86c.js";import{C as s}from"./PageContainer-aad2cfc7.js";const t=({children:r,className:o})=>a.jsx(s,{sx:{p:0,position:"relative"},className:o,elevation:9,variant:void 0,children:r});t.propTypes={children:p.node};export{t as B};
