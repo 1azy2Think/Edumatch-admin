@@ -8,7 +8,7 @@ import Logo from 'src/layouts/full/shared/logo/Logo';
 import AuthLogin from './auth/AuthLogin';
 
 const Login2 = () => {
-  
+
   return (
     <PageContainer title="Login" description="this is Login page">
       <Box
@@ -44,13 +44,13 @@ const Login2 = () => {
               <AuthLogin
                 subtext={
                   <Typography variant="subtitle1" textAlign="center" color="textSecondary" mb={1}>
-                    Your Social Campaigns
+                    Admin Portal Login
                   </Typography>
                 }
                 subtitle={
                   <Stack direction="row" spacing={1} justifyContent="center" mt={3}>
                     <Typography color="textSecondary" variant="h6" fontWeight="500">
-                      New to Modernize?
+                      Don't have an account? Contact your administrator?
                     </Typography>
                     <Typography
                       component={Link}
