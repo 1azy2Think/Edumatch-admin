@@ -54,8 +54,14 @@ import PageContainer from 'src/components/container/PageContainer';
 import DashboardCard from '../../components/shared/DashboardCard';
 import { collection, getDocs, doc, setDoc, deleteDoc, addDoc, query, where, writeBatch } from 'firebase/firestore';
 import { db } from '../../utils/firebase';
+import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 const ScholarshipPage = () => {
+    // Auth context and navigation
+    const { currentUser, userRole, isAdmin, hasRole } = useAuth();
+    const navigate = useNavigate();
+    
     // State management
     const [scholarships, setScholarships] = useState([]);
     const [universities, setUniversities] = useState([]);
@@ -82,46 +88,83 @@ const ScholarshipPage = () => {
         severity: 'success'
     });
 
+    // Check if user can view content
+    const canViewContent = () => {
+        return !!userRole; // Any authenticated user can view content
+    };
+
+    // Check if user can manage content
+    const canManageContent = () => {
+        return isAdmin() || hasRole('moderator') || hasRole('editor');
+    };
+
+    // Check if user can approve content
+    const canApproveContent = () => {
+        return isAdmin() || hasRole('moderator');
+    };
+
+    // Check for permission on component mount
+    useEffect(() => {
+        // Redirect users without view permission to dashboard
+        if (userRole !== null && !canViewContent()) {
+            navigate('/dashboard');
+        }
+    }, [userRole, navigate]);
+
     // Fetch data on component mount
     useEffect(() => {
-        const fetchData = async () => {
-            try {
-                setLoading(true);
+        // Only fetch data if user can view content
+        if (canViewContent()) {
+            fetchData();
+        }
+    }, [userRole]);
 
-                // Fetch scholarships
-                const scholarshipsSnapshot = await getDocs(collection(db, 'scholarships'));
-                let scholarshipsList = scholarshipsSnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data(),
-                    // Ensure is_active has a default even if it's missing
-                    is_active: doc.data().is_active !== undefined ? doc.data().is_active : true
-                }));
+    // Fetch all necessary data
+    const fetchData = async () => {
+        try {
+            setLoading(true);
 
-                // Try to initialize the is_active field in the database
-                await initializeActiveStatus();
+            // Fetch scholarships
+            const scholarshipsSnapshot = await getDocs(collection(db, 'scholarships'));
+            let scholarshipsList = scholarshipsSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                // Ensure is_active has a default even if it's missing
+                is_active: doc.data().is_active !== undefined ? doc.data().is_active : true
+            }));
 
-                // Fetch universities
-                const universitiesSnapshot = await getDocs(collection(db, 'universities'));
-                const universitiesList = universitiesSnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
+            // Try to initialize the is_active field in the database
+            await initializeActiveStatus();
 
-                setScholarships(scholarshipsList);
-                setUniversities(universitiesList);
-                setLoading(false);
-            } catch (err) {
-                console.error('Error fetching data:', err);
-                setError('Failed to load data. Please try again.');
-                setLoading(false);
-            }
-        };
+            // Fetch universities
+            const universitiesSnapshot = await getDocs(collection(db, 'universities'));
+            const universitiesList = universitiesSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
 
-        fetchData();
-    }, []);
+            setScholarships(scholarshipsList);
+            setUniversities(universitiesList);
+            setLoading(false);
+        } catch (err) {
+            console.error('Error fetching data:', err);
+            setError('Failed to load data. Please try again.');
+            setLoading(false);
+        }
+    };
 
     // Open dialog for adding new scholarship
     const handleAddNew = () => {
+        // Check if user can manage content
+        if (!canManageContent()) {
+            setSnackbar({
+                open: true,
+                message: 'You do not have permission to add scholarships',
+                severity: 'error'
+            });
+            return;
+        }
+        
         setCurrentScholarship({
             name: '',
             description: '',
@@ -139,6 +182,16 @@ const ScholarshipPage = () => {
 
     // Open dialog for editing scholarship
     const handleEdit = (scholarship) => {
+        // Check if user can manage content
+        if (!canManageContent()) {
+            setSnackbar({
+                open: true,
+                message: 'You do not have permission to edit scholarships',
+                severity: 'error'
+            });
+            return;
+        }
+        
         setCurrentScholarship({
           id: scholarship.id,
           name: scholarship.name || '',
@@ -189,6 +242,16 @@ const ScholarshipPage = () => {
 
     // Save scholarship (add or update)
     const handleSave = async () => {
+        // Check if user can manage content
+        if (!canManageContent()) {
+            setSnackbar({
+                open: true,
+                message: 'You do not have permission to manage scholarships',
+                severity: 'error'
+            });
+            return;
+        }
+        
         try {
             setLoading(true);
 
@@ -265,6 +328,16 @@ const ScholarshipPage = () => {
 
     // Delete scholarship
     const handleDelete = async (id) => {
+        // Check if user can manage content
+        if (!canManageContent()) {
+            setSnackbar({
+                open: true,
+                message: 'You do not have permission to delete scholarships',
+                severity: 'error'
+            });
+            return;
+        }
+        
         if (window.confirm('Are you sure you want to delete this scholarship?')) {
             try {
                 setLoading(true);
@@ -325,6 +398,16 @@ const ScholarshipPage = () => {
 
     // Toggle scholarship active status
     const handleToggleStatus = async (scholarship) => {
+        // Check if user can approve content
+        if (!canApproveContent() && !canManageContent()) {
+            setSnackbar({
+                open: true,
+                message: 'You do not have permission to activate/deactivate scholarships',
+                severity: 'error'
+            });
+            return;
+        }
+        
         try {
             setLoading(true);
             const scholarshipRef = doc(db, 'scholarships', scholarship.id);
@@ -401,6 +484,36 @@ const ScholarshipPage = () => {
         return isActive ? 'success' : 'error';
     };
 
+    // If user doesn't have view content permission, return access denied message
+    if (userRole !== null && !canViewContent()) {
+        return (
+            <PageContainer title="Access Denied" description="Permission required">
+                <Box
+                    display="flex"
+                    flexDirection="column"
+                    alignItems="center"
+                    justifyContent="center"
+                    height="80vh"
+                >
+                    <Typography variant="h4" color="error" gutterBottom>
+                        Access Denied
+                    </Typography>
+                    <Typography variant="body1">
+                        You don't have permission to access this page.
+                    </Typography>
+                    <Button 
+                        variant="contained" 
+                        color="primary" 
+                        sx={{ mt: 3 }}
+                        onClick={() => navigate('/dashboard')}
+                    >
+                        Go to Dashboard
+                    </Button>
+                </Box>
+            </PageContainer>
+        );
+    }
+
     return (
         <PageContainer title="Scholarship Management" description="Manage all scholarships">
             <DashboardCard title="Scholarships">
@@ -432,14 +545,16 @@ const ScholarshipPage = () => {
                         </FormControl>
                     </Box>
 
-                    <Button
-                        variant="contained"
-                        color="primary"
-                        startIcon={<IconPlus size="18" />}
-                        onClick={handleAddNew}
-                    >
-                        Add Scholarship
-                    </Button>
+                    {canManageContent() && (
+                        <Button
+                            variant="contained"
+                            color="primary"
+                            startIcon={<IconPlus size="18" />}
+                            onClick={handleAddNew}
+                        >
+                            Add Scholarship
+                        </Button>
+                    )}
                 </Box>
 
                 {loading && !openDialog ? (
@@ -542,43 +657,51 @@ const ScholarshipPage = () => {
                                         <Divider />
                                         
                                         <CardActions sx={{ justifyContent: 'space-between', p: 2 }}>
-                                            <FormControlLabel
-                                                control={
-                                                    <Switch
-                                                        size="small"
-                                                        checked={scholarship.is_active}
-                                                        onChange={() => handleToggleStatus(scholarship)}
-                                                        color="success"
-                                                    />
-                                                }
-                                                label={
-                                                    <Typography variant="caption">
-                                                        {scholarship.is_active ? 'Active' : 'Inactive'}
-                                                    </Typography>
-                                                }
-                                            />
+                                            {(canApproveContent() || canManageContent()) && (
+                                                <FormControlLabel
+                                                    control={
+                                                        <Switch
+                                                            size="small"
+                                                            checked={scholarship.is_active}
+                                                            onChange={() => handleToggleStatus(scholarship)}
+                                                            color="success"
+                                                        />
+                                                    }
+                                                    label={
+                                                        <Typography variant="caption">
+                                                            {scholarship.is_active ? 'Active' : 'Inactive'}
+                                                        </Typography>
+                                                    }
+                                                />
+                                            )}
 
-                                            <Box>
-                                                <Tooltip title="Edit">
-                                                    <IconButton
-                                                        color="primary"
-                                                        size="small"
-                                                        onClick={() => handleEdit(scholarship)}
-                                                    >
-                                                        <IconEdit size="18" />
-                                                    </IconButton>
-                                                </Tooltip>
+                                            {!canApproveContent() && !canManageContent() && (
+                                                <Box></Box> /* Empty box to maintain spacing */
+                                            )}
 
-                                                <Tooltip title="Delete">
-                                                    <IconButton
-                                                        color="error"
-                                                        size="small"
-                                                        onClick={() => handleDelete(scholarship.id)}
-                                                    >
-                                                        <IconTrash size="18" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Box>
+                                            {canManageContent() && (
+                                                <Box>
+                                                    <Tooltip title="Edit">
+                                                        <IconButton
+                                                            color="primary"
+                                                            size="small"
+                                                            onClick={() => handleEdit(scholarship)}
+                                                        >
+                                                            <IconEdit size="18" />
+                                                        </IconButton>
+                                                    </Tooltip>
+
+                                                    <Tooltip title="Delete">
+                                                        <IconButton
+                                                            color="error"
+                                                            size="small"
+                                                            onClick={() => handleDelete(scholarship.id)}
+                                                        >
+                                                            <IconTrash size="18" />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                </Box>
+                                            )}
                                         </CardActions>
                                     </Card>
                                 </Grid>
@@ -587,7 +710,7 @@ const ScholarshipPage = () => {
                             <Grid item xs={12}>
                                 <Paper sx={{ p: 3, textAlign: 'center' }}>
                                     <Typography variant="body1" color="textSecondary">
-                                        No scholarships found. Add a new scholarship to get started.
+                                        No scholarships found. {canManageContent() ? 'Add a new scholarship to get started.' : ''}
                                     </Typography>
                                 </Paper>
                             </Grid>

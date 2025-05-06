@@ -6,7 +6,8 @@ import {
   signOut,
   sendPasswordResetEmail
 } from 'firebase/auth';
-import { auth } from '../utils/firebase';
+import { auth, db } from '../utils/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 // Create auth context
 const AuthContext = createContext();
@@ -14,6 +15,7 @@ const AuthContext = createContext();
 // Context provider component
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
+  const [userRole, setUserRole] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -25,7 +27,38 @@ export const AuthProvider = ({ children }) => {
     clearError();
     try {
       setLoading(true);
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      // Fetch user role from Firestore
+      const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        setUserRole(userData.role || 'user');
+        
+        // Check if account is active
+        if (userData.active === false) {
+          await signOut(auth);
+          setError('This account has been deactivated');
+          return false;
+        }
+        
+        // Update last login
+        await setDoc(doc(db, 'users', userCredential.user.uid), {
+          lastLogin: new Date()
+        }, { merge: true });
+      } else {
+        // If user doc doesn't exist, create it with default role
+        await setDoc(doc(db, 'users', userCredential.user.uid), {
+          email,
+          role: 'user',
+          active: true,
+          displayName: email.split('@')[0],
+          created_at: new Date(),
+          lastLogin: new Date()
+        });
+        setUserRole('user');
+      }
+      
       return true;
     } catch (err) {
       setError(formatAuthError(err));
@@ -40,7 +73,19 @@ export const AuthProvider = ({ children }) => {
     clearError();
     try {
       setLoading(true);
-      await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Create user document with default user role
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
+        email,
+        role: 'user',
+        displayName: email.split('@')[0],
+        active: true,
+        permissions: ['view_content'],
+        created_at: new Date()
+      });
+      
+      setUserRole('user');
       return true;
     } catch (err) {
       setError(formatAuthError(err));
@@ -56,6 +101,7 @@ export const AuthProvider = ({ children }) => {
     try {
       setLoading(true);
       await signOut(auth);
+      setUserRole(null);
       return true;
     } catch (err) {
       setError(formatAuthError(err));
@@ -105,10 +151,39 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Check if user is admin
+  const isAdmin = () => {
+    return userRole === 'admin';
+  };
+
+  // Check if user has a specific role
+  const hasRole = (role) => {
+    return userRole === role;
+  };
+
   // Subscribe to auth state changes when component mounts
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
+      
+      if (user) {
+        try {
+          // Fetch user role from Firestore
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setUserRole(userData.role || 'user');
+          } else {
+            setUserRole('user');
+          }
+        } catch (err) {
+          console.error('Error fetching user role:', err);
+          setUserRole('user');
+        }
+      } else {
+        setUserRole(null);
+      }
+      
       setLoading(false);
     });
 
@@ -117,13 +192,16 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     currentUser,
+    userRole,
     loading,
     error,
     login,
     register,
     logout,
     resetPassword,
-    clearError
+    clearError,
+    isAdmin,
+    hasRole
   };
 
   return (

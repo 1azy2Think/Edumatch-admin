@@ -1,5 +1,5 @@
 import {
-  IconCopy, IconLayoutDashboard, IconSchool, IconAward,
+  IconCopy, IconLayoutDashboard, IconSchool, IconAward, IconUser
 } from '@tabler/icons-react';
 
 import { uniqueId } from 'lodash';
@@ -37,6 +37,12 @@ const Menuitems = [
     title: 'Scholarship',
     icon: IconAward,
     href: '/scholarships',
+  },
+  {
+    id: uniqueId(),
+    title: 'Admin',
+    icon: IconUser,
+    href: '/admin',
   },
 ];
 

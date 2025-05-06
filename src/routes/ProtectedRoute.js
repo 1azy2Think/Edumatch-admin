@@ -1,30 +1,42 @@
+// src/routes/ProtectedRoute.js
 import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Box, CircularProgress } from '@mui/material';
+import { CircularProgress, Box, Typography } from '@mui/material';
 
 const ProtectedRoute = () => {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, loading, userRole } = useAuth();
+  const location = useLocation();
 
+  // Show loading indicator while checking authentication
   if (loading) {
     return (
-      <Box 
-        display="flex" 
-        justifyContent="center" 
-        alignItems="center" 
-        minHeight="100vh"
+      <Box
+        display="flex"
+        flexDirection="column"
+        alignItems="center"
+        justifyContent="center"
+        height="100vh"
       >
-        <CircularProgress />
+        <CircularProgress size={60} />
+        <Typography variant="h6" mt={2}>
+          Checking authentication...
+        </Typography>
       </Box>
     );
   }
 
   // If not logged in, redirect to login page
   if (!currentUser) {
-    return <Navigate to="/auth/login" />;
+    return <Navigate to="/auth/login" state={{ from: location }} replace />;
   }
 
-  // If logged in, render the child routes
+  // If trying to access /admin and not an admin, redirect to dashboard
+  if (location.pathname === '/admin' && userRole !== 'admin') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // User is authenticated and authorized for the route
   return <Outlet />;
 };
 

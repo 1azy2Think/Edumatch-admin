@@ -20,7 +20,8 @@ import {
   Chip,
   Snackbar,
   Alert,
-  CircularProgress
+  CircularProgress,
+  Tooltip
 } from '@mui/material';
 import {
   IconEdit,
@@ -32,8 +33,38 @@ import PageContainer from 'src/components/container/PageContainer';
 import DashboardCard from '../../components/shared/DashboardCard';
 import { collection, getDocs, doc, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { db } from '../../utils/firebase';
+import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
+
+// Function to get role color
+const getRoleColor = (role) => {
+  switch (role) {
+    case 'admin':
+      return 'error';
+    case 'moderator':
+      return 'warning';
+    case 'editor':
+      return 'success';
+    case 'user':
+      return 'info';
+    default:
+      return 'default';
+  }
+};
 
 const UniversityPage = () => {
+  // Auth context and navigation
+  const { currentUser, userRole, isAdmin, hasRole } = useAuth();
+  const navigate = useNavigate();
+  
+  // Define role-based permissions
+  const permissions = {
+    canView: true, // Everyone can view
+    canCreate: userRole === 'admin' || userRole === 'editor',
+    canUpdate: userRole === 'admin' || userRole === 'editor' || userRole === 'moderator',
+    canDelete: userRole === 'admin' // Only admins can delete
+  };
+  
   // State management
   const [universities, setUniversities] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -43,8 +74,8 @@ const UniversityPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentUniversity, setCurrentUniversity] = useState({
     name: '',
-    state: '', // Changed from country to state
-    address: '', // Added address field
+    state: '',
+    address: '',
     website: '',
     coursesCount: 0,
     scholarshipsCount: 0
@@ -163,6 +194,16 @@ const UniversityPage = () => {
 
   // Open dialog for adding new university
   const handleAddNew = () => {
+    // Check if user has permission to create
+    if (!permissions.canCreate) {
+      setSnackbar({
+        open: true,
+        message: 'You do not have permission to add universities',
+        severity: 'error'
+      });
+      return;
+    }
+    
     setCurrentUniversity({
       name: '',
       state: '',
@@ -177,6 +218,16 @@ const UniversityPage = () => {
 
   // Open dialog for editing university
   const handleEdit = (university) => {
+    // Check if user has permission to update
+    if (!permissions.canUpdate) {
+      setSnackbar({
+        open: true,
+        message: 'You do not have permission to edit universities',
+        severity: 'error'
+      });
+      return;
+    }
+    
     setCurrentUniversity({
       id: university.id,
       name: university.name || '',
@@ -212,6 +263,17 @@ const UniversityPage = () => {
 
   // Save university (add or update)
   const handleSave = async () => {
+    // Check permissions again
+    if ((dialogMode === 'add' && !permissions.canCreate) || 
+        (dialogMode === 'edit' && !permissions.canUpdate)) {
+      setSnackbar({
+        open: true,
+        message: `You do not have permission to ${dialogMode === 'add' ? 'create' : 'update'} universities`,
+        severity: 'error'
+      });
+      return;
+    }
+    
     try {
       setLoading(true);
       
@@ -226,7 +288,15 @@ const UniversityPage = () => {
         };
       }
       
+      // Add timestamp and user info
+      universityData.updated_at = new Date();
+      universityData.updated_by = currentUser?.uid;
+      
       if (dialogMode === 'add') {
+        // Add created_at for new universities
+        universityData.created_at = new Date();
+        universityData.created_by = currentUser?.uid;
+        
         // Add new university
         await addDoc(collection(db, 'universities'), universityData);
         setSnackbar({
@@ -261,6 +331,16 @@ const UniversityPage = () => {
 
   // Delete university
   const handleDelete = async (id) => {
+    // Check if user has permission to delete
+    if (!permissions.canDelete) {
+      setSnackbar({
+        open: true,
+        message: 'You do not have permission to delete universities',
+        severity: 'error'
+      });
+      return;
+    }
+    
     if (window.confirm('Are you sure you want to delete this university?')) {
       try {
         setLoading(true);
@@ -305,7 +385,24 @@ const UniversityPage = () => {
 
   return (
     <PageContainer title="University Management" description="Manage all universities">
-      <DashboardCard title="Universities">
+      <DashboardCard 
+        title={
+          <Box display="flex" alignItems="center">
+            <Typography variant="h4">Universities</Typography>
+            {/* Show user role indicator if not admin */}
+            {userRole && userRole !== 'admin' && (
+              <Tooltip title={`You have ${userRole} privileges`}>
+                <Chip 
+                  label={userRole.charAt(0).toUpperCase() + userRole.slice(1)} 
+                  size="small" 
+                  color={getRoleColor(userRole)} 
+                  sx={{ ml: 2 }}
+                />
+              </Tooltip>
+            )}
+          </Box>
+        }
+      >
         <Box mb={3} display="flex" justifyContent="space-between" alignItems="center">
           <Box display="flex" alignItems="center">
             <TextField
@@ -319,14 +416,31 @@ const UniversityPage = () => {
               }}
             />
           </Box>
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<IconPlus size="18" />}
-            onClick={handleAddNew}
-          >
-            Add University
-          </Button>
+          
+          {/* Add university button - only show if user has permission */}
+          {permissions.canCreate ? (
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<IconPlus size="18" />}
+              onClick={handleAddNew}
+            >
+              Add University
+            </Button>
+          ) : (
+            <Tooltip title="You don't have permission to add universities">
+              <span>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  startIcon={<IconPlus size="18" />}
+                  disabled
+                >
+                  Add University
+                </Button>
+              </span>
+            </Tooltip>
+          )}
         </Box>
 
         {loading && !openDialog ? (
@@ -384,20 +498,51 @@ const UniversityPage = () => {
                         ) : 'N/A'}
                       </TableCell>
                       <TableCell>
-                        <IconButton 
-                          color="primary" 
-                          size="small"
-                          onClick={() => handleEdit(university)}
-                        >
-                          <IconEdit size="18" />
-                        </IconButton>
-                        <IconButton 
-                          color="error" 
-                          size="small"
-                          onClick={() => handleDelete(university.id)}
-                        >
-                          <IconTrash size="18" />
-                        </IconButton>
+                        {/* Edit button - only show if user has permission */}
+                        {permissions.canUpdate ? (
+                          <IconButton 
+                            color="primary" 
+                            size="small"
+                            onClick={() => handleEdit(university)}
+                          >
+                            <IconEdit size="18" />
+                          </IconButton>
+                        ) : (
+                          <Tooltip title="You don't have permission to edit">
+                            <span>
+                              <IconButton 
+                                color="primary" 
+                                size="small"
+                                disabled
+                              >
+                                <IconEdit size="18" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        )}
+                        
+                        {/* Delete button - only show if user has permission */}
+                        {permissions.canDelete ? (
+                          <IconButton 
+                            color="error" 
+                            size="small"
+                            onClick={() => handleDelete(university.id)}
+                          >
+                            <IconTrash size="18" />
+                          </IconButton>
+                        ) : (
+                          <Tooltip title="You don't have permission to delete">
+                            <span>
+                              <IconButton 
+                                color="error" 
+                                size="small"
+                                disabled
+                              >
+                                <IconTrash size="18" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))

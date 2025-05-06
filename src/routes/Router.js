@@ -12,6 +12,7 @@ const Dashboard = Loadable(lazy(() => import('../views/dashboard/Dashboard')))
 const UniversityPage = Loadable(lazy(() => import('../views/crud/UniversityPage')))
 const CoursePage = Loadable(lazy(() => import('../views/crud/CoursePage')))
 const ScholarshipPage = Loadable(lazy(() => import('../views/crud/ScholarshipPage')))
+const AdminPage = Loadable(lazy(() => import('../views/crud/AdminPage')));
 const SamplePage = Loadable(lazy(() => import('../views/sample-page/SamplePage')))
 const Icons = Loadable(lazy(() => import('../views/icons/Icons')))
 const TypographyPage = Loadable(lazy(() => import('../views/utilities/TypographyPage')))
@@ -36,6 +37,7 @@ const Router = [
           { path: '/universities', exact: true, element: <UniversityPage /> },
           { path: '/courses', exact: true, element: <CoursePage /> },
           { path: '/scholarships', exact: true, element: <ScholarshipPage /> },
+          { path: '/admin', exact: true, element: <AdminPage /> },
           
           // Original routes
           { path: '/sample-page', exact: true, element: <SamplePage /> },

@@ -1,3 +1,4 @@
+// src/views/crud/CoursePage.js
 import React, { useState, useEffect } from 'react';
 import {
   Grid,
@@ -35,7 +36,8 @@ import {
   Divider,
   List,
   ListItem,
-  ListItemText
+  ListItemText,
+  Tooltip
 } from '@mui/material';
 import {
   IconEdit,
@@ -51,14 +53,18 @@ import {
   IconSchool,
   IconCategory,
   IconListDetails,
-  IconX
+  IconX,
+  IconInfoCircle,
+  IconLock
 } from '@tabler/icons-react';
 import PageContainer from 'src/components/container/PageContainer';
 import DashboardCard from '../../components/shared/DashboardCard';
 import { collection, getDocs, doc, setDoc, deleteDoc, addDoc, query, where, getDoc } from 'firebase/firestore';
 import { db } from '../../utils/firebase';
+// Import the auth context to get user role
+import { useAuth } from '../../contexts/AuthContext';
 
-// Define getLevelColor function to fix the missing function error
+// Define getLevelColor function
 const getLevelColor = (level) => {
   switch (level) {
     case 'Foundation':
@@ -77,6 +83,18 @@ const getLevelColor = (level) => {
 };
 
 const CoursePage = () => {
+  // Get user role from auth context
+  const { currentUser, userRole, isAdmin } = useAuth();
+  
+  // Define role-based permissions
+  const permissions = {
+    canView: true, // Everyone can view
+    canCreate: userRole === 'admin' || userRole === 'editor',
+    canUpdate: userRole === 'admin' || userRole === 'editor' || userRole === 'moderator',
+    canDelete: userRole === 'admin', // Only admins can delete
+    canApprove: userRole === 'admin' || userRole === 'moderator' // Admins and moderators can approve
+  };
+
   // State management
   const [courses, setCourses] = useState([]);
   const [universities, setUniversities] = useState([]);
@@ -100,6 +118,7 @@ const CoursePage = () => {
     university_id: '',
     primary_category: '',
     intakes: [],
+    status: 'draft', // Add status field: draft, pending_approval, approved, rejected
     created_at: new Date()
   });
   const [viewCourse, setViewCourse] = useState(null);
@@ -119,25 +138,29 @@ const CoursePage = () => {
         const coursesSnapshot = await getDocs(collection(db, 'courses'));
         const coursesList = coursesSnapshot.docs.map(doc => ({
           id: doc.id,
-          ...doc.data()
+          ...doc.data(),
+          status: doc.data().status || 'approved' // Default to approved for existing courses
         }));
         setCourses(coursesList);
         
-        // Fetch universities
-        const universitiesSnapshot = await getDocs(collection(db, 'universities'));
-        const universitiesList = universitiesSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setUniversities(universitiesList);
-        
-        // Fetch categories
-        const categoriesSnapshot = await getDocs(collection(db, 'categories'));
-        const categoriesList = categoriesSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setCategories(categoriesList);
+        // Only fetch supporting data if user has permission to create/edit
+        if (permissions.canCreate || permissions.canUpdate) {
+          // Fetch universities
+          const universitiesSnapshot = await getDocs(collection(db, 'universities'));
+          const universitiesList = universitiesSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setUniversities(universitiesList);
+          
+          // Fetch categories
+          const categoriesSnapshot = await getDocs(collection(db, 'categories'));
+          const categoriesList = categoriesSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setCategories(categoriesList);
+        }
         
         setLoading(false);
       } catch (err) {
@@ -148,10 +171,20 @@ const CoursePage = () => {
     };
 
     fetchData();
-  }, []);
+  }, [permissions.canCreate, permissions.canUpdate]);
 
   // Open dialog for adding new course
   const handleAddNew = () => {
+    // Check if user has permission to create
+    if (!permissions.canCreate) {
+      setSnackbar({
+        open: true,
+        message: 'You do not have permission to add new courses',
+        severity: 'error'
+      });
+      return;
+    }
+    
     try {
       setCurrentCourse({
         name: '',
@@ -162,6 +195,8 @@ const CoursePage = () => {
         university_id: '',
         primary_category: '',
         intakes: [],
+        status: 'draft',
+        created_by: currentUser?.uid,
         created_at: new Date()
       });
       setDialogMode('add');
@@ -178,6 +213,16 @@ const CoursePage = () => {
 
   // Open dialog for editing course
   const handleEdit = (course) => {
+    // Check if user has permission to update
+    if (!permissions.canUpdate) {
+      setSnackbar({
+        open: true,
+        message: 'You do not have permission to edit courses',
+        severity: 'error'
+      });
+      return;
+    }
+    
     try {
       if (!course) {
         throw new Error('Course data is invalid');
@@ -193,6 +238,7 @@ const CoursePage = () => {
         university_id: course.university_id || '',
         primary_category: course.primary_category || '',
         intakes: course.intakes || [],
+        status: course.status || 'draft',
         created_at: course.created_at || new Date()
       });
       setDialogMode('edit');
@@ -247,6 +293,115 @@ const CoursePage = () => {
     }
   };
 
+  // Additional handler for status change
+  const handleStatusChange = (newStatus) => {
+    setCurrentCourse({
+      ...currentCourse,
+      status: newStatus
+    });
+  };
+
+  // Submit course for approval
+  const handleSubmitForApproval = async () => {
+    try {
+      if (!currentCourse.id) {
+        throw new Error('Course must be saved before submitting for approval');
+      }
+      
+      setLoading(true);
+      
+      // Update the course status
+      const courseRef = doc(db, 'courses', currentCourse.id);
+      await setDoc(courseRef, {
+        status: 'pending_approval',
+        submitted_by: currentUser?.uid,
+        submitted_at: new Date()
+      }, { merge: true });
+      
+      // Update local state
+      setCurrentCourse({
+        ...currentCourse,
+        status: 'pending_approval',
+        submitted_by: currentUser?.uid,
+        submitted_at: new Date()
+      });
+      
+      setSnackbar({
+        open: true,
+        message: 'Course submitted for approval',
+        severity: 'success'
+      });
+      
+      // Refresh courses
+      const coursesSnapshot = await getDocs(collection(db, 'courses'));
+      const coursesList = coursesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setCourses(coursesList);
+    } catch (err) {
+      console.error('Error submitting for approval:', err);
+      setSnackbar({
+        open: true,
+        message: `Error: ${err.message}`,
+        severity: 'error'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Approve or reject course
+  const handleApproveReject = async (courseId, newStatus) => {
+    // Check if user has permission to approve
+    if (!permissions.canApprove) {
+      setSnackbar({
+        open: true,
+        message: 'You do not have permission to approve or reject courses',
+        severity: 'error'
+      });
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      
+      // Update the course status
+      const courseRef = doc(db, 'courses', courseId);
+      await setDoc(courseRef, {
+        status: newStatus,
+        approved_by: currentUser?.uid,
+        approved_at: new Date()
+      }, { merge: true });
+      
+      setSnackbar({
+        open: true,
+        message: `Course ${newStatus === 'approved' ? 'approved' : 'rejected'} successfully`,
+        severity: 'success'
+      });
+      
+      // Close dialog if open
+      setOpenViewDialog(false);
+      
+      // Refresh courses
+      const coursesSnapshot = await getDocs(collection(db, 'courses'));
+      const coursesList = coursesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setCourses(coursesList);
+    } catch (err) {
+      console.error(`Error ${newStatus} course:`, err);
+      setSnackbar({
+        open: true,
+        message: `Error: ${err.message}`,
+        severity: 'error'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Handle intakes input (comma separated)
   const handleIntakesChange = (e) => {
     const value = e.target.value;
@@ -281,7 +436,6 @@ const CoursePage = () => {
     if (field === 'min_cgpa') {
       updatedRequirements[examType].min_cgpa = value === '' ? '' : parseFloat(value);
     } else if (field === 'required_subjects') {
-      // This is just a simple implementation - might need more complex UI for full requirements
       updatedRequirements[examType].required_subjects = [
         { min_grade: value.grade, count: parseInt(value.count) }
       ];
@@ -388,6 +542,17 @@ const CoursePage = () => {
 
   // Save course (add or update)
   const handleSave = async () => {
+    // Additional check for permissions
+    if ((dialogMode === 'add' && !permissions.canCreate) || 
+        (dialogMode === 'edit' && !permissions.canUpdate)) {
+      setSnackbar({
+        open: true,
+        message: `You do not have permission to ${dialogMode === 'add' ? 'create' : 'update'} courses`,
+        severity: 'error'
+      });
+      return;
+    }
+    
     try {
       setLoading(true);
       
@@ -403,7 +568,8 @@ const CoursePage = () => {
       const courseData = {
         ...currentCourse,
         university_name,
-        updated_at: new Date()
+        updated_at: new Date(),
+        updated_by: currentUser?.uid
       };
       
       if (dialogMode === 'add') {
@@ -449,6 +615,16 @@ const CoursePage = () => {
 
   // Delete course
   const handleDelete = async (id) => {
+    // Check if user has permission to delete
+    if (!permissions.canDelete) {
+      setSnackbar({
+        open: true,
+        message: 'You do not have permission to delete courses',
+        severity: 'error'
+      });
+      return;
+    }
+    
     if (window.confirm('Are you sure you want to delete this course?')) {
       try {
         setLoading(true);
@@ -482,6 +658,21 @@ const CoursePage = () => {
   // Close snackbar
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false });
+  };
+
+  // Get status color
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'approved':
+        return 'success';
+      case 'pending_approval':
+        return 'warning';
+      case 'rejected':
+        return 'error';
+      case 'draft':
+      default:
+        return 'default';
+    }
   };
 
   // Filter courses based on search term and filters
@@ -569,7 +760,24 @@ const CoursePage = () => {
 
   return (
     <PageContainer title="Course Management" description="Manage all courses">
-      <DashboardCard title="Courses">
+      <DashboardCard 
+        title={
+          <Box display="flex" alignItems="center">
+            <Typography variant="h4">Courses</Typography>
+            {/* Show user role indicator if not admin */}
+            {userRole && userRole !== 'admin' && (
+              <Tooltip title={`You have ${userRole} privileges`}>
+                <Chip 
+                  label={userRole.charAt(0).toUpperCase() + userRole.slice(1)} 
+                  size="small" 
+                  color={getRoleColor(userRole)} 
+                  sx={{ ml: 2 }}
+                />
+              </Tooltip>
+            )}
+          </Box>
+        }
+      >
         <Box mb={3} display="flex" justifyContent="space-between" alignItems="center">
           <Box display="flex" alignItems="center" gap={2}>
             <TextField
@@ -628,14 +836,30 @@ const CoursePage = () => {
               <Tab value="grid" icon={<IconSortAscending size="18" />} />
             </Tabs>
             
-            <Button
-              variant="contained"
-              color="primary"
-              startIcon={<IconPlus size="18" />}
-              onClick={handleAddNew}
-            >
-              Add Course
-            </Button>
+            {/* Add course button - only show if user has permission */}
+            {permissions.canCreate ? (
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<IconPlus size="18" />}
+                onClick={handleAddNew}
+              >
+                Add Course
+              </Button>
+            ) : (
+              <Tooltip title="You don't have permission to add courses">
+                <span>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    startIcon={<IconPlus size="18" />}
+                    disabled
+                  >
+                    Add Course
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
           </Box>
         </Box>
 
@@ -658,6 +882,7 @@ const CoursePage = () => {
                       <TableCell>Duration</TableCell>
                       <TableCell>Fees</TableCell>
                       <TableCell>Category</TableCell>
+                      <TableCell>Status</TableCell>
                       <TableCell>Actions</TableCell>
                     </TableRow>
                   </TableHead>
@@ -701,33 +926,100 @@ const CoursePage = () => {
                           </TableCell>
                           <TableCell>{course.primary_category || 'N/A'}</TableCell>
                           <TableCell>
+                            <Chip
+                              label={course.status ? course.status.replace('_', ' ').toUpperCase() : 'DRAFT'}
+                              size="small"
+                              color={getStatusColor(course.status)}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            {/* View button - everyone can view */}
                             <IconButton
                               color="info"
                               size="small"
                               onClick={() => handleViewCourse(course)}
+                              title="View Details"
                             >
                               <IconEye size="18" />
                             </IconButton>
-                            <IconButton
-                              color="primary"
-                              size="small"
-                              onClick={() => handleEdit(course)}
-                            >
-                              <IconEdit size="18" />
-                            </IconButton>
-                            <IconButton
-                              color="error"
-                              size="small"
-                              onClick={() => handleDelete(course.id)}
-                            >
-                              <IconTrash size="18" />
-                            </IconButton>
+                            
+                            {/* Edit button - only show if user has permission */}
+                            {permissions.canUpdate ? (
+                              <IconButton
+                                color="primary"
+                                size="small"
+                                onClick={() => handleEdit(course)}
+                                title="Edit Course"
+                              >
+                                <IconEdit size="18" />
+                              </IconButton>
+                            ) : (
+                              <Tooltip title="You don't have permission to edit">
+                                <span>
+                                  <IconButton
+                                    color="primary"
+                                    size="small"
+                                    disabled
+                                  >
+                                    <IconEdit size="18" />
+                                  </IconButton>
+                                </span>
+                              </Tooltip>
+                            )}
+                            
+                            {/* Delete button - only show if user has permission */}
+                            {permissions.canDelete ? (
+                              <IconButton
+                                color="error"
+                                size="small"
+                                onClick={() => handleDelete(course.id)}
+                                title="Delete Course"
+                              >
+                                <IconTrash size="18" />
+                              </IconButton>
+                            ) : (
+                              <Tooltip title="You don't have permission to delete">
+                                <span>
+                                  <IconButton
+                                    color="error"
+                                    size="small"
+                                    disabled
+                                  >
+                                    <IconTrash size="18" />
+                                  </IconButton>
+                                </span>
+                              </Tooltip>
+                            )}
+                            
+                            {/* Approve/Reject buttons - only show for pending courses if user has approve permission */}
+                            {course.status === 'pending_approval' && permissions.canApprove && (
+                              <>
+                                <Tooltip title="Approve Course">
+                                  <IconButton
+                                    color="success"
+                                    size="small"
+                                    onClick={() => handleApproveReject(course.id, 'approved')}
+                                  >
+                                    <IconUserCheck size="18" />
+                                  </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Reject Course">
+                                  <IconButton
+                                    color="error"
+                                    size="small"
+                                    onClick={() => handleApproveReject(course.id, 'rejected')}
+                                  >
+                                    <IconUserX size="18" />
+                                  </IconButton>
+                                </Tooltip>
+                              </>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={7} align="center">
+                        <TableCell colSpan={8} align="center">
                           <Typography variant="body2" color="textSecondary" py={2}>
                             No courses found.
                           </Typography>
@@ -742,7 +1034,20 @@ const CoursePage = () => {
                 {filteredCourses.length > 0 ? (
                   filteredCourses.map((course, index) => (
                     <Grid item xs={12} sm={6} md={4} lg={3} key={course.id}>
-                      <Card sx={{ height: '100%' }}>
+                      <Card sx={{ height: '100%', position: 'relative' }}>
+                        {/* Add status badge to top right */}
+                        <Chip
+                          label={course.status ? course.status.replace('_', ' ').toUpperCase() : 'DRAFT'}
+                          size="small"
+                          color={getStatusColor(course.status)}
+                          sx={{
+                            position: 'absolute',
+                            top: '10px',
+                            right: '10px',
+                            zIndex: 1
+                          }}
+                        />
+                        
                         <Box sx={{ position: 'relative' }}>
                           {/* Colored box instead of placeholder image */}
                           <Box
@@ -785,7 +1090,7 @@ const CoursePage = () => {
                               {course.duration || 'Unknown duration'}
                             </Typography>
                           </Box>
-                          <Box mt={1} display="flex" justifyContent="space-between">
+                          <Box mt={2} display="flex" justifyContent="space-between">
                             <IconButton
                               size="small"
                               color="info"
@@ -793,21 +1098,53 @@ const CoursePage = () => {
                             >
                               <IconEye size="16" />
                             </IconButton>
+                            
                             <Box>
-                              <IconButton
-                                size="small"
-                                color="primary"
-                                onClick={() => handleEdit(course)}
-                              >
-                                <IconEdit size="16" />
-                              </IconButton>
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() => handleDelete(course.id)}
-                              >
-                                <IconTrash size="16" />
-                              </IconButton>
+                              {/* Edit button - only show if user has permission */}
+                              {permissions.canUpdate ? (
+                                <IconButton
+                                  size="small"
+                                  color="primary"
+                                  onClick={() => handleEdit(course)}
+                                >
+                                  <IconEdit size="16" />
+                                </IconButton>
+                              ) : (
+                                <Tooltip title="You don't have permission to edit">
+                                  <span>
+                                    <IconButton
+                                      size="small"
+                                      color="primary"
+                                      disabled
+                                    >
+                                      <IconEdit size="16" />
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
+                              )}
+                              
+                              {/* Delete button - only show if user has permission */}
+                              {permissions.canDelete ? (
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() => handleDelete(course.id)}
+                                >
+                                  <IconTrash size="16" />
+                                </IconButton>
+                              ) : (
+                                <Tooltip title="You don't have permission to delete">
+                                  <span>
+                                    <IconButton
+                                      size="small"
+                                      color="error"
+                                      disabled
+                                    >
+                                      <IconTrash size="16" />
+                                    </IconButton>
+                                  </span>
+                                </Tooltip>
+                              )}
                             </Box>
                           </Box>
                         </CardContent>
@@ -836,7 +1173,15 @@ const CoursePage = () => {
           {viewCourse && (
             <>
               <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="h6">Course Details</Typography>
+                <Box display="flex" alignItems="center">
+                  <Typography variant="h6">Course Details</Typography>
+                  <Chip
+                    label={viewCourse.status ? viewCourse.status.replace('_', ' ').toUpperCase() : 'DRAFT'}
+                    size="small"
+                    color={getStatusColor(viewCourse.status)}
+                    sx={{ ml: 2 }}
+                  />
+                </Box>
                 <IconButton onClick={() => setOpenViewDialog(false)}>
                   <IconX size="18" />
                 </IconButton>
@@ -1021,16 +1366,40 @@ const CoursePage = () => {
               </DialogContent>
               <DialogActions>
                 <Button onClick={() => setOpenViewDialog(false)}>Close</Button>
-                <Button 
-                  variant="contained" 
-                  color="primary"
-                  onClick={() => {
-                    setOpenViewDialog(false);
-                    handleEdit(viewCourse);
-                  }}
-                >
-                  Edit Course
-                </Button>
+                
+                {/* Edit button in dialog - only show if user has permission */}
+                {permissions.canUpdate && (
+                  <Button 
+                    variant="contained" 
+                    color="primary"
+                    onClick={() => {
+                      setOpenViewDialog(false);
+                      handleEdit(viewCourse);
+                    }}
+                  >
+                    Edit Course
+                  </Button>
+                )}
+                
+                {/* Approval actions - only show for pending courses if user has approve permission */}
+                {viewCourse.status === 'pending_approval' && permissions.canApprove && (
+                  <>
+                    <Button 
+                      variant="contained" 
+                      color="success"
+                      onClick={() => handleApproveReject(viewCourse.id, 'approved')}
+                    >
+                      Approve
+                    </Button>
+                    <Button 
+                      variant="contained" 
+                      color="error"
+                      onClick={() => handleApproveReject(viewCourse.id, 'rejected')}
+                    >
+                      Reject
+                    </Button>
+                  </>
+                )}
               </DialogActions>
             </>
           )}
@@ -1045,7 +1414,20 @@ const CoursePage = () => {
           scroll="paper"
         >
           <DialogTitle>
-            {dialogMode === 'add' ? 'Add New Course' : 'Edit Course'}
+            <Box display="flex" justifyContent="space-between" alignItems="center">
+              <Typography variant="h6">
+                {dialogMode === 'add' ? 'Add New Course' : 'Edit Course'}
+              </Typography>
+              
+              {/* Show status for existing courses */}
+              {dialogMode === 'edit' && currentCourse.status && (
+                <Chip
+                  label={currentCourse.status.replace('_', ' ').toUpperCase()}
+                  size="small"
+                  color={getStatusColor(currentCourse.status)}
+                />
+              )}
+            </Box>
           </DialogTitle>
           <DialogContent dividers>
             <Box component="form" sx={{ mt: 1 }}>
@@ -1164,6 +1546,37 @@ const CoursePage = () => {
                       helperText="Enter month names separated by commas"
                     />
                   </Grid>
+                  
+                  {/* Status selection */}
+                  {dialogMode === 'edit' && (
+                    <Grid item xs={12}>
+                      <FormControl fullWidth>
+                        <InputLabel id="status-select-label">Status</InputLabel>
+                        <Select
+                          labelId="status-select-label"
+                          name="status"
+                          value={currentCourse.status || 'draft'}
+                          label="Status"
+                          onChange={(e) => handleStatusChange(e.target.value)}
+                          disabled={!permissions.canApprove && currentCourse.status !== 'draft'}
+                        >
+                          <MenuItem value="draft">Draft</MenuItem>
+                          <MenuItem value="pending_approval">Pending Approval</MenuItem>
+                          {permissions.canApprove && (
+                            <>
+                              <MenuItem value="approved">Approved</MenuItem>
+                              <MenuItem value="rejected">Rejected</MenuItem>
+                            </>
+                          )}
+                        </Select>
+                        {!permissions.canApprove && currentCourse.status !== 'draft' && (
+                          <Typography variant="caption" color="textSecondary">
+                            You need moderator or admin permissions to change the status of this course.
+                          </Typography>
+                        )}
+                      </FormControl>
+                    </Grid>
+                  )}
                 </Grid>
               )}
               
@@ -1488,6 +1901,43 @@ const CoursePage = () => {
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
+            
+            {/* Submit for Approval button - show for editors with draft items */}
+            {(dialogMode === 'edit' && 
+              currentCourse.status === 'draft' && 
+              (userRole === 'editor' || userRole === 'admin')) && (
+              <Button
+                variant="outlined"
+                color="warning"
+                onClick={handleSubmitForApproval}
+              >
+                Submit for Approval
+              </Button>
+            )}
+            
+            {/* Approve/Reject buttons for pending approval courses - only for admin and moderators */}
+            {(dialogMode === 'edit' && 
+              currentCourse.status === 'pending_approval' && 
+              permissions.canApprove) && (
+              <>
+                <Button
+                  variant="outlined"
+                  color="success"
+                  onClick={() => handleApproveReject(currentCourse.id, 'approved')}
+                >
+                  Approve
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={() => handleApproveReject(currentCourse.id, 'rejected')}
+                >
+                  Reject
+                </Button>
+              </>
+            )}
+            
+            {/* Save button */}
             <Button
               onClick={handleSave}
               variant="contained"

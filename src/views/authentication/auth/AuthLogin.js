@@ -18,15 +18,21 @@ const AuthLogin = ({ title, subtitle, subtext }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [rememberDevice, setRememberDevice] = useState(true);
-    const { login, error, loading, clearError } = useAuth();
+    const { login, error, loading, clearError, userRole } = useAuth();
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         clearError();
         const success = await login(email, password);
+        
         if (success) {
-            navigate('/dashboard');
+            // Redirect based on user role
+            if (userRole === 'admin') {
+                navigate('/admin'); // Admins are redirected to admin page
+            } else {
+                navigate('/dashboard'); // Regular users are redirected to dashboard
+            }
         }
     };
 

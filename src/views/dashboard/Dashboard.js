@@ -1,7 +1,8 @@
+// src\views\dashboard\Dashboard.js
 import React, { useState, useEffect } from 'react';
 import { Grid, Box, CircularProgress, Typography, Alert } from '@mui/material';
 import PageContainer from 'src/components/container/PageContainer';
-import { db } from 'src/utils/firebase'; // Adjust this path as needed
+import { db } from 'src/utils/firebase';
 import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 
 // components
