@@ -39,8 +39,12 @@ const Menuitems = [
     href: '/scholarships',
   },
   {
+    navlabel: true,
+    subheader: 'Admin',
+  },
+  {
     id: uniqueId(),
-    title: 'Admin',
+    title: 'User Role',
     icon: IconUser,
     href: '/admin',
   },
