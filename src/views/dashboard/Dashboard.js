@@ -12,6 +12,8 @@ import RecentChats from './components/RecentChats';
 import CoursePerformance from './components/CoursePerformance';
 import PopularCourses from './components/PopularCourses';
 import TotalStats from './components/TotalStats';
+import RealtimeActivity from './components/RealtimeActivity';
+
 
 const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState({
@@ -107,10 +109,10 @@ const Dashboard = () => {
         // Link courses with their university data
         const processedCourses = courses.map(course => {
           // Find the university this course belongs to
-          const university = universities.find(uni => 
+          const university = universities.find(uni =>
             uni.courses && uni.courses.includes(course.id)
           );
-          
+
           // Add university data to course object
           return {
             ...course,
@@ -215,6 +217,9 @@ const Dashboard = () => {
               popular={dashboardData.popularCourses}
             />
           </Grid>
+          {/* <Grid item xs={12} lg={4}>
+            <RealtimeActivity />
+          </Grid> */}
         </Grid>
       </Box>
     </PageContainer>

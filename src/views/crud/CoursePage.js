@@ -82,6 +82,21 @@ const getLevelColor = (level) => {
   }
 };
 
+const getRoleColor = (role) => {
+  switch (role) {
+    case 'admin':
+      return 'error';
+    case 'moderator':
+      return 'warning';
+    case 'editor':
+      return 'success';
+    case 'user':
+      return 'info';
+    default:
+      return 'default';
+  }
+};
+
 const CoursePage = () => {
   // Get user role from auth context
   const { currentUser, userRole, isAdmin } = useAuth();

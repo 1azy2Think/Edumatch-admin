@@ -154,14 +154,10 @@ const ScholarshipPage = () => {
     };
 
     // Open dialog for adding new scholarship
-    const handleAddNew = () => {
+    const handleAddScholarship = () => {
         // Check if user can manage content
         if (!canManageContent()) {
-            setSnackbar({
-                open: true,
-                message: 'You do not have permission to add scholarships',
-                severity: 'error'
-            });
+            handleShowSnackbar('You do not have permission to add scholarships', 'error');
             return;
         }
         
@@ -181,14 +177,10 @@ const ScholarshipPage = () => {
     };
 
     // Open dialog for editing scholarship
-    const handleEdit = (scholarship) => {
+    const handleEditScholarship = (scholarship) => {
         // Check if user can manage content
         if (!canManageContent()) {
-            setSnackbar({
-                open: true,
-                message: 'You do not have permission to edit scholarships',
-                severity: 'error'
-            });
+            handleShowSnackbar('You do not have permission to edit scholarships', 'error');
             return;
         }
         
@@ -233,7 +225,7 @@ const ScholarshipPage = () => {
     };
 
     // Handle toggle changes
-    const handleToggleChange = (e) => {
+    const handleToggleActive = (e) => {
         setCurrentScholarship({
             ...currentScholarship,
             is_active: e.target.checked
@@ -241,14 +233,10 @@ const ScholarshipPage = () => {
     };
 
     // Save scholarship (add or update)
-    const handleSave = async () => {
+    const handleSaveScholarship = async () => {
         // Check if user can manage content
         if (!canManageContent()) {
-            setSnackbar({
-                open: true,
-                message: 'You do not have permission to manage scholarships',
-                severity: 'error'
-            });
+            handleShowSnackbar('You do not have permission to manage scholarships', 'error');
             return;
         }
         
@@ -286,11 +274,7 @@ const ScholarshipPage = () => {
             if (dialogMode === 'add') {
                 // Add new scholarship
                 await addDoc(collection(db, 'scholarships'), scholarshipData);
-                setSnackbar({
-                    open: true,
-                    message: 'Scholarship added successfully!',
-                    severity: 'success'
-                });
+                handleShowSnackbar('Scholarship added successfully!', 'success');
             } else {
                 // Update existing scholarship
                 const scholarshipRef = doc(db, 'scholarships', currentScholarship.id);
@@ -298,43 +282,24 @@ const ScholarshipPage = () => {
                     original_field_of_study, original_location, original_awards_details,
                     ...scholarshipDataWithoutId } = scholarshipData;
                 await setDoc(scholarshipRef, scholarshipDataWithoutId, { merge: true });
-                setSnackbar({
-                    open: true,
-                    message: 'Scholarship updated successfully!',
-                    severity: 'success'
-                });
+                handleShowSnackbar('Scholarship updated successfully!', 'success');
             }
 
             setOpenDialog(false);
-
-            // Refresh scholarships
-            const scholarshipsSnapshot = await getDocs(collection(db, 'scholarships'));
-            const scholarshipsList = scholarshipsSnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-            setScholarships(scholarshipsList);
+            await refreshScholarships();
         } catch (err) {
             console.error('Error saving scholarship:', err);
-            setSnackbar({
-                open: true,
-                message: `Error: ${err.message}`,
-                severity: 'error'
-            });
+            handleShowSnackbar(`Error: ${err.message}`, 'error');
         } finally {
             setLoading(false);
         }
     };
 
     // Delete scholarship
-    const handleDelete = async (id) => {
+    const handleDeleteScholarship = async (id) => {
         // Check if user can manage content
         if (!canManageContent()) {
-            setSnackbar({
-                open: true,
-                message: 'You do not have permission to delete scholarships',
-                severity: 'error'
-            });
+            handleShowSnackbar('You do not have permission to delete scholarships', 'error');
             return;
         }
         
@@ -342,26 +307,11 @@ const ScholarshipPage = () => {
             try {
                 setLoading(true);
                 await deleteDoc(doc(db, 'scholarships', id));
-                setSnackbar({
-                    open: true,
-                    message: 'Scholarship deleted successfully!',
-                    severity: 'success'
-                });
-
-                // Refresh scholarships
-                const scholarshipsSnapshot = await getDocs(collection(db, 'scholarships'));
-                const scholarshipsList = scholarshipsSnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
-                setScholarships(scholarshipsList);
+                handleShowSnackbar('Scholarship deleted successfully!', 'success');
+                await refreshScholarships();
             } catch (err) {
                 console.error('Error deleting scholarship:', err);
-                setSnackbar({
-                    open: true,
-                    message: `Error: ${err.message}`,
-                    severity: 'error'
-                });
+                handleShowSnackbar(`Error: ${err.message}`, 'error');
             } finally {
                 setLoading(false);
             }
@@ -400,11 +350,7 @@ const ScholarshipPage = () => {
     const handleToggleStatus = async (scholarship) => {
         // Check if user can approve content
         if (!canApproveContent() && !canManageContent()) {
-            setSnackbar({
-                open: true,
-                message: 'You do not have permission to activate/deactivate scholarships',
-                severity: 'error'
-            });
+            handleShowSnackbar('You do not have permission to activate/deactivate scholarships', 'error');
             return;
         }
         
@@ -416,6 +362,19 @@ const ScholarshipPage = () => {
                 updated_at: new Date()
             }, { merge: true });
 
+            await refreshScholarships();
+            handleShowSnackbar(`Scholarship ${scholarship.is_active ? 'deactivated' : 'activated'} successfully!`, 'success');
+        } catch (err) {
+            console.error('Error toggling scholarship status:', err);
+            handleShowSnackbar(`Error: ${err.message}`, 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Refresh scholarships data
+    const refreshScholarships = async () => {
+        try {
             // Refresh scholarships
             const scholarshipsSnapshot = await getDocs(collection(db, 'scholarships'));
             const scholarshipsList = scholarshipsSnapshot.docs.map(doc => ({
@@ -423,22 +382,20 @@ const ScholarshipPage = () => {
                 ...doc.data()
             }));
             setScholarships(scholarshipsList);
-
-            setSnackbar({
-                open: true,
-                message: `Scholarship ${scholarship.is_active ? 'deactivated' : 'activated'} successfully!`,
-                severity: 'success'
-            });
+            return scholarshipsList;
         } catch (err) {
-            console.error('Error toggling scholarship status:', err);
-            setSnackbar({
-                open: true,
-                message: `Error: ${err.message}`,
-                severity: 'error'
-            });
-        } finally {
-            setLoading(false);
+            console.error('Error refreshing scholarships:', err);
+            throw err;
         }
+    };
+
+    // Show snackbar with message
+    const handleShowSnackbar = (message, severity = 'success') => {
+        setSnackbar({
+            open: true,
+            message,
+            severity
+        });
     };
 
     // Close snackbar
@@ -550,7 +507,7 @@ const ScholarshipPage = () => {
                             variant="contained"
                             color="primary"
                             startIcon={<IconPlus size="18" />}
-                            onClick={handleAddNew}
+                            onClick={handleAddScholarship}
                         >
                             Add Scholarship
                         </Button>
@@ -685,7 +642,7 @@ const ScholarshipPage = () => {
                                                         <IconButton
                                                             color="primary"
                                                             size="small"
-                                                            onClick={() => handleEdit(scholarship)}
+                                                            onClick={() => handleEditScholarship(scholarship)}
                                                         >
                                                             <IconEdit size="18" />
                                                         </IconButton>
@@ -695,7 +652,7 @@ const ScholarshipPage = () => {
                                                         <IconButton
                                                             color="error"
                                                             size="small"
-                                                            onClick={() => handleDelete(scholarship.id)}
+                                                            onClick={() => handleDeleteScholarship(scholarship.id)}
                                                         >
                                                             <IconTrash size="18" />
                                                         </IconButton>
@@ -745,7 +702,7 @@ const ScholarshipPage = () => {
                                     control={
                                         <Switch
                                             checked={currentScholarship.is_active}
-                                            onChange={handleToggleChange}
+                                            onChange={handleToggleActive}
                                             color="success"
                                         />
                                     }
@@ -836,7 +793,7 @@ const ScholarshipPage = () => {
                     <DialogActions>
                         <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
                         <Button
-                            onClick={handleSave}
+                            onClick={handleSaveScholarship}
                             variant="contained"
                             color="primary"
                             disabled={!currentScholarship.name}

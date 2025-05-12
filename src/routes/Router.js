@@ -9,6 +9,7 @@ const BlankLayout = Loadable(lazy(() => import('../layouts/blank/BlankLayout')))
 
 /* ****Pages***** */
 const Dashboard = Loadable(lazy(() => import('../views/dashboard/Dashboard')))
+const RealtimeMonitor = Loadable(lazy(() => import('../views/dashboard/components/RealtimeMonitor')))
 const UniversityPage = Loadable(lazy(() => import('../views/crud/UniversityPage')))
 const CoursePage = Loadable(lazy(() => import('../views/crud/CoursePage')))
 const ScholarshipPage = Loadable(lazy(() => import('../views/crud/ScholarshipPage')))
@@ -32,13 +33,15 @@ const Router = [
         children: [
           { path: '/', element: <Navigate to="/dashboard" /> },
           { path: '/dashboard', exact: true, element: <Dashboard /> },
-          
+          { path: '/dashboard/realtime', element: <RealtimeMonitor /> },
+
           // CRUD Routes
           { path: '/universities', exact: true, element: <UniversityPage /> },
           { path: '/courses', exact: true, element: <CoursePage /> },
           { path: '/scholarships', exact: true, element: <ScholarshipPage /> },
           { path: '/admin', exact: true, element: <AdminPage /> },
-          
+
+
           // Original routes
           { path: '/sample-page', exact: true, element: <SamplePage /> },
           { path: '/icons', exact: true, element: <Icons /> },
