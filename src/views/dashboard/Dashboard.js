@@ -1,12 +1,9 @@
 // src\views\dashboard\Dashboard.js
 import React, { useState, useEffect } from 'react';
-import { Grid, Box, CircularProgress, Typography, Alert, Button } from '@mui/material';
-import { IconBrandWebflow } from '@tabler/icons-react'; // Import an appropriate icon
+import { Grid, Box, CircularProgress, Typography, Alert } from '@mui/material';
 import PageContainer from 'src/components/container/PageContainer';
 import { db } from 'src/utils/firebase';
 import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
-import { useAuth } from 'src/contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
 
 // components
 import CourseOverview from './components/CourseOverview';
@@ -19,9 +16,6 @@ import RealtimeActivity from './components/RealtimeActivity';
 
 
 const Dashboard = () => {
-  const { isAdmin } = useAuth();
-  const navigate = useNavigate();
-
   const [dashboardData, setDashboardData] = useState({
     courses: [],
     categories: [],
@@ -149,11 +143,6 @@ const Dashboard = () => {
     fetchFirestoreData();
   }, []);
 
-  // Navigate to realtime monitor page
-  const handleRealtimeMonitorClick = () => {
-    navigate('/dashboard/realtime');
-  };
-
   if (loading) {
     return (
       <Box
@@ -197,20 +186,6 @@ const Dashboard = () => {
   return (
     <PageContainer title="Course Admin Dashboard" description="Educational Courses Management Dashboard">
       <Box>
-        {/* Admin-only Realtime Monitor Button */}
-        {isAdmin && (
-          <Box display="flex" justifyContent="flex-end" mb={3}>
-            <Button
-              variant="contained"
-              color="primary"
-              startIcon={<IconBrandWebflow size="18" />}
-              onClick={handleRealtimeMonitorClick}
-            >
-              Realtime Activity Monitor
-            </Button>
-          </Box>
-        )}
-        
         <Grid container spacing={3}>
           <Grid item xs={12} lg={8}>
             <CourseOverview data={dashboardData} />
